@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MIT-WPU Campus Navigation Graph</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6fa;
+      display: flex;
+      justify-content: center;
+      padding: 30px 16px;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.10);
+      padding: 24px;
+      width: 100%;
+      max-width: 860px;
+    }
+
+    h2 {
+      color: #1F3864;
+      font-size: 20px;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      color: #666;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .ctrl-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .btn {
+      padding: 6px 16px;
+      border-radius: 6px;
+      border: 1px solid #aaa;
+      background: #f0f0f0;
+      color: #333;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn.active {
+      background: #185FA5;
+      color: #fff;
+      border-color: #185FA5;
+    }
+
+    .btn:hover:not(.active) {
+      background: #e0e0e0;
+    }
+
+    .legend {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: #555;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .leg-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    #info-box {
+      font-size: 13px;
+      color: #555;
+      min-height: 20px;
+      margin-bottom: 8px;
+      padding: 6px 10px;
+      background: #f0f4ff;
+      border-left: 3px solid #185FA5;
+      border-radius: 4px;
+    }
+
+    svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>MIT-WPU Campus Navigation Graph</h2>
+  <p class="subtitle">Design and Analysis of Algorithms — Mini Project</p>
+
+  <div class="ctrl-bar">
+    <button class="btn active" id="btn-graph" onclick="setMode('graph')">Full Graph</button>
+    <button class="btn" id="btn-mst" onclick="setMode('mst')">MST (Prim's / Kruskal's)</button>
+    <button class="btn" id="btn-reset" onclick="resetHighlight()">Reset</button>
+  </div>
+
+  <div class="legend">
+    <span><span class="leg-dot" style="background:#185FA5"></span>Academic</span>
+    <span><span class="leg-dot" style="background:#0F6E56"></span>Facility</span>
+    <span><span class="leg-dot" style="background:#854F0B"></span>Entry / Landmark</span>
+    <span><span class="leg-dot" style="background:#993C1D"></span>Residential</span>
+    <span style="margin-left:8px; color:#1D9E75; font-weight:bold;">— MST edge</span>
+  </div>
+
+  <div id="info-box">Click any building to highlight its connections</div>
+
+  <svg id="campus-svg" viewBox="0 0 800 560">
+    <defs>
+      <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5"
+              markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke"
+              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+    <g id="edges-layer"></g>
+    <g id="nodes-layer"></g>
+  </svg>
+</div>
+
+<script>
+  // ── DATA ────────────────────────────────────────────────────────────────────
+
+  const buildings = [
+    { id:0,  name:"Main Gate",            short:"Main Gate",    x:80,  y:280, cat:"landmark"    },
+    { id:1,  name:"Saraswati Building",   short:"Saraswati",    x:210, y:150, cat:"academic"    },
+    { id:2,  name:"Agastya Building",     short:"Agastya",      x:370, y:90,  cat:"academic"    },
+    { id:3,  name:"Chanakya Building",    short:"Chanakya",     x:510, y:170, cat:"academic"    },
+    { id:4,  name:"Vyas Building",        short:"Vyas",         x:470, y:300, cat:"academic"    },
+    { id:5,  name:"Jamadagni Building",   short:"Jamadagni",    x:610, y:390, cat:"academic"    },
+    { id:6,  name:"Shriraj Building",     short:"Shriraj",      x:340, y:390, cat:"facility"    },
+    { id:7,  name:"Vivekanand Building",  short:"Vivekanand",   x:230, y:260, cat:"academic"    },
+    { id:8,  name:"Dronacharya Building", short:"Dronacharya",  x:680, y:480, cat:"facility"    },
+    { id:9,  name:"World Peace Dome",     short:"WP Dome",      x:170, y:400, cat:"landmark"    },
+    { id:10, name:"Medical Center",       short:"Medical",      x:300, y:490, cat:"facility"    },
+    { id:11, name:"Boys Hostel",          short:"Hostel",       x:480, y:500, cat:"residential" }
+  ];
+
+  const edges = [
+    { u:0,  v:1,  w:100 },
+    { u:0,  v:9,  w:180 },
+    { u:1,  v:2,  w:120 },
+    { u:1,  v:3,  w:150 },
+    { u:2,  v:4,  w:90  },
+    { u:2,  v:7,  w:140 },
+    { u:3,  v:4,  w:110 },
+    { u:3,  v:9,  w:130 },
+    { u:4,  v:5,  w:160 },
+    { u:4,  v:6,  w:80  },
+    { u:5,  v:8,  w:200 },
+    { u:5,  v:6,  w:120 },
+    { u:6,  v:10, w:150 },
+    { u:6,  v:11, w:220 },
+    { u:7,  v:9,  w:110 },
+    { u:8,  v:11, w:180 },
+    { u:9,  v:10, w:160 },
+    { u:10, v:11, w:130 }
+  ];
+
+  // MST edges computed by Kruskal's (stored as "u-v" with u < v)
+  const mstEdges = new Set([
+    '0-1','1-2','2-4','3-4','4-6','5-6','7-9','3-9','6-10','10-11','8-11'
+  ]);
+
+  // Category colors
+  const catColor = {
+    academic:    '#185FA5',
+    facility:    '#0F6E56',
+    landmark:    '#854F0B',
+    residential: '#993C1D'
+  };
+  const catFill = {
+    academic:    '#E6F1FB',
+    facility:    '#E1F5EE',
+    landmark:    '#FAEEDA',
+    residential: '#FAECE7'
+  };
+
+  // ── STATE ───────────────────────────────────────────────────────────────────
+
+  let mode = 'graph';   // 'graph' or 'mst'
+  let selected = null;  // currently selected building id
+
+  // ── HELPERS ─────────────────────────────────────────────────────────────────
+
+  function edgeKey(u, v) {
+    return u < v ? `${u}-${v}` : `${v}-${u}`;
+  }
+
+  function getAdjacentEdges(nodeId) {
+    return edges.filter(e => e.u === nodeId || e.v === nodeId);
+  }
+
+  function svgEl(tag, attrs) {
+    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  }
+
+  // ── DRAW ────────────────────────────────────────────────────────────────────
+
+  function draw() {
+    const eLayer = document.getElementById('edges-layer');
+    const nLayer = document.getElementById('nodes-layer');
+    eLayer.innerHTML = '';
+    nLayer.innerHTML = '';
+
+    // Draw edges
+    edges.forEach(({ u, v, w }) => {
+      const key = edgeKey(u, v);
+      const isMst = mstEdges.has(key);
+
+      // In MST mode, skip non-MST edges
+      if (mode === 'mst' && !isMst) return;
+
+      const isHighlighted = selected !== null && (u === selected || v === selected);
+      const isDimmed      = selected !== null && !isHighlighted;
+
+      const bu = buildings[u];
+      const bv = buildings[v];
+
+      // Edge line
+      const line = svgEl('line', {
+        x1: bu.x, y1: bu.y,
+        x2: bv.x, y2: bv.y,
+        stroke:        isHighlighted ? '#E24B4A' : isMst ? '#1D9E75' : '#999999',
+        'stroke-width': isHighlighted ? 3 : isMst ? 2.5 : 1.2,
+        opacity:       isDimmed ? 0.12 : 1,
+        'stroke-linecap': 'round'
+      });
+      eLayer.appendChild(line);
+
+      // Weight label at midpoint
+      if (!isDimmed) {
+        const mx = (bu.x + bv.x) / 2;
+        const my = (bu.y + bv.y) / 2 - 7;
+        const label = svgEl('text', {
+          x: mx, y: my,
+          'text-anchor': 'middle',
+          'font-size': '10',
+          'font-family': 'Arial, sans-serif',
+          fill: isHighlighted ? '#A32D2D' : isMst ? '#0F6E56' : '#777777',
+          'font-weight': isHighlighted || isMst ? '600' : '400'
+        });
+        label.textContent = w + 'm';
+        eLayer.appendChild(label);
+      }
+    });
+
+    // Draw nodes
+    buildings.forEach(b => {
+      const isSelected = b.id === selected;
+      const isNeighbor = selected !== null &&
+        getAdjacentEdges(selected).some(e => e.u === b.id || e.v === b.id);
+      const isDimmed = selected !== null && !isSelected && !isNeighbor;
+
+      const g = svgEl('g', { cursor: 'pointer', opacity: isDimmed ? 0.2 : 1 });
+      g.addEventListener('click', () => onNodeClick(b.id));
+
+      // Circle
+      const circle = svgEl('circle', {
+        cx: b.x, cy: b.y,
+        r: isSelected ? 22 : 17,
+        fill:   isSelected ? catColor[b.cat] : catFill[b.cat],
+        stroke: catColor[b.cat],
+        'stroke-width': isSelected ? 3 : 1.5
+      });
+      g.appendChild(circle);
+
+      // Node ID number inside circle
+      const idText = svgEl('text', {
+        x: b.x, y: b.y + 4,
+        'text-anchor': 'middle',
+        'font-size': '10',
+        'font-weight': '700',
+        'font-family': 'Arial, sans-serif',
+        fill: isSelected ? '#ffffff' : catColor[b.cat]
+      });
+      idText.textContent = b.id;
+      g.appendChild(idText);
+
+      // Building name label below/above circle
+      const labelY = b.y > 440 ? b.y + 34 : b.y - 26;
+      const nameLabel = svgEl('text', {
+        x: b.x, y: labelY,
+        'text-anchor': 'middle',
+        'font-size': '11',
+        'font-family': 'Arial, sans-serif',
+        fill: isSelected ? catColor[b.cat] : '#333333',
+        'font-weight': isSelected ? '700' : '400'
+      });
+      nameLabel.textContent = b.short;
+      g.appendChild(nameLabel);
+
+      nLayer.appendChild(g);
+    });
+  }
+
+  // ── INTERACTION ─────────────────────────────────────────────────────────────
+
+  function onNodeClick(id) {
+    // Clicking the same node again deselects it
+    if (selected === id) {
+      resetHighlight();
+      return;
+    }
+
+    selected = id;
+    const b = buildings[id];
+    const adj = getAdjacentEdges(id);
+    const connStr = adj.map(e => {
+      const otherId = e.u === id ? e.v : e.u;
+      return `${buildings[otherId].name} (${e.w}m)`;
+    }).join(', ');
+
+    document.getElementById('info-box').textContent =
+      `[${id}] ${b.name}  —  Connected to: ${connStr}`;
+
+    draw();
+  }
+
+  function resetHighlight() {
+    selected = null;
+    document.getElementById('info-box').textContent =
+      'Click any building to highlight its connections';
+    draw();
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.getElementById('btn-graph').classList.toggle('active', m === 'graph');
+    document.getElementById('btn-mst').classList.toggle('active',   m === 'mst');
+    resetHighlight();
+  }
+
+  // Initial draw
+  draw();
+</script>
+
+</body>
+</html>
